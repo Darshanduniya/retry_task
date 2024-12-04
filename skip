@@ -1,0 +1,50 @@
+from airflow import DAG
+from airflow.operators.python_operator import PythonOperator, BranchPythonOperator
+from airflow.operators.dummy_operator import DummyOperator
+from datetime import datetime
+import monetdblite  # Assume you have the necessary MonetDB Python package installed
+
+# Define a function to connect to MonetDB and check the status
+def check_schedule():
+    # Replace with your connection details
+    conn = monetdblite.connect('/path/to/monetdb')  # Adjust for your environment
+    cursor = conn.cursor()
+    
+    # Example query to fetch schedule type
+    cursor.execute("SELECT schedule_type FROM schedule_table LIMIT 1")
+    result = cursor.fetchone()[0]  # Assume it returns 'Weekly' or 'Monthly'
+    
+    cursor.close()
+    conn.close()
+    
+    # Decide next task based on result
+    if result == 'Weekly':
+        return 'skip_task'  # Name of the dummy skip task
+    else:
+        return 'send_mail'  # Proceed to mail sending task
+
+# DAG definition
+default_args = {
+    'owner': 'airflow',
+    'start_date': datetime(2023, 10, 1),
+    'retries': 1
+}
+
+with DAG('check_and_skip_dag', default_args=default_args, schedule_interval=None) as dag:
+    
+    api_task = DummyOperator(task_id='api_task')
+    
+    # Check the schedule
+    check_weekly_or_monthly_task = BranchPythonOperator(
+        task_id='check_weekly_or_monthly_task',
+        python_callable=check_schedule
+    )
+    
+    # Skip task - acts as an endpoint if 'Weekly'
+    skip_task = DummyOperator(task_id='skip_task')
+
+    # Send email task
+    send_mail = DummyOperator(task_id='send_mail')
+
+    # Define the workflow
+    api_task >> check_weekly_or_monthly_task >> [skip_task, send_mail]
