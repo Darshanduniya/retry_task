@@ -1,0 +1,59 @@
+from airflow import DAG
+from airflow.operators.python import PythonOperator, ShortCircuitOperator
+from airflow.utils.dates import days_ago
+import monetdblite  # Ensure you have the monetdblite or MonetDB connector
+
+# Define your connection details and query
+MONETDB_CONNECTION = {
+    'host': 'your_host',
+    'port': 'your_port',
+    'username': 'your_username',
+    'password': 'your_password',
+    'database': 'your_database'
+}
+
+def check_frequency():
+    # Connect to MonetDB and execute the query
+    import monetdblite  # or use any MonetDB Python connector you have
+    connection = monetdblite.connect(**MONETDB_CONNECTION)
+    cursor = connection.cursor()
+    cursor.execute("SELECT frequency FROM your_table LIMIT 1")
+    result = cursor.fetchone()[0]  # Fetch the output, assuming single-row result
+    cursor.close()
+    connection.close()
+    
+    # Return True only if the result is not 'Weekly'
+    return result != 'Weekly'
+
+# Define the DAG
+with DAG('skip_downstream_if_weekly',
+         start_date=days_ago(1),
+         schedule_interval='@daily',  # Adjust as needed
+         catchup=False) as dag:
+    
+    # Task to check frequency and conditionally continue
+    check_weekly_or_monthly_task = ShortCircuitOperator(
+        task_id='check_weekly_or_monthly_task',
+        python_callable=check_frequency
+    )
+    
+    # Placeholder for the generate task
+    generate_task = PythonOperator(
+        task_id='generate_task',
+        python_callable=lambda: print("Generating tasks...")
+    )
+    
+    # Placeholder for API task
+    api_task = PythonOperator(
+        task_id='api_task',
+        python_callable=lambda: print("Calling API...")
+    )
+    
+    # Placeholder for email task
+    send_mail_task = PythonOperator(
+        task_id='send_mail',
+        python_callable=lambda: print("Sending mail...")
+    )
+    
+    # Define the DAG structure
+    check_weekly_or_monthly_task >> generate_task >> api_task >> send_mail_task
